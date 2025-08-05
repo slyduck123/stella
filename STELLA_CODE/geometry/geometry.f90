@@ -24,7 +24,7 @@ module geometry
    public :: communicate_geo_multibox, x_displacement_fac 
    
    ! Geometric quantities for the gyrokinetic equations 
-   public :: bmag, dbdzed, d2bdzed, btor, bmag_psi0, grho, grho_norm, grad_x
+   public :: bmag, dbdzed, btor, bmag_psi0, grho, grho_norm, grad_x
    public :: dcvdriftdrho, dcvdrift0drho, dgbdriftdrho, dgbdrift0drho
    public :: gds2, gds21, gds22, gds23, gds24, gds25, gds26, gradpar
    public :: cvdrift, cvdrift0, gbdrift, gbdrift0
@@ -73,7 +73,7 @@ module geometry
    real, dimension(:), allocatable :: zed_eqarc, alpha
    real, dimension(:), allocatable :: gradpar, b_dot_grad_z_averaged
    real, dimension(:), allocatable :: dBdrho, d2Bdrdth, dgradpardrho, btor, Rmajor 
-   real, dimension(:, :), allocatable :: bmag, bmag_psi0, dbdzed, d2bdzed
+   real, dimension(:, :), allocatable :: bmag, bmag_psi0, dbdzed
    real, dimension(:, :), allocatable :: cvdrift, cvdrift0, gbdrift, gbdrift0
    real, dimension(:, :), allocatable :: dcvdriftdrho, dcvdrift0drho, dgbdriftdrho, dgbdrift0drho
    real, dimension(:, :), allocatable :: gds2, gds21, gds22, gds23, gds24, gds25, gds26
@@ -243,9 +243,6 @@ contains
       ! subroutines (Miller, VMEC, etc.), as there B is likely calculated on a finer z-grid
       do iy = 1, nalpha
          call get_dzed(nzgrid, delzed, bmag(iy, :), dbdzed(iy, :))
-
-         !> Added by HX: Extra array to calculate second derivative for bmag in z
-         call get_dzed(nzgrid, delzed, dbdzed(iy, :), d2bdzed(iy, :) )
       end do
 
       ! Change the boundary conditions if the shear is too low or if |∇x . ∇y| is too low at the ends of the field line 
@@ -953,7 +950,6 @@ contains
       if (.not. allocated(dgbdrift0drho)) allocate (dgbdrift0drho(nalpha, -nzgrid:nzgrid)); dgbdrift0drho = 0.0
       if (.not. allocated(dcvdrift0drho)) allocate (dcvdrift0drho(nalpha, -nzgrid:nzgrid)); dcvdrift0drho = 0.0
       if (.not. allocated(dbdzed)) allocate (dbdzed(nalpha, -nzgrid:nzgrid)); dbdzed = 0.0
-      if (.not. allocated(d2bdzed)) allocate (d2bdzed(nalpha, -nzgrid:nzgrid)); d2bdzed = 0.0
       if (.not. allocated(theta_vmec)) allocate (theta_vmec(nalpha, -nzgrid:nzgrid)); theta_vmec = 0.0
       if (.not. allocated(jacob)) allocate (jacob(nalpha, -nzgrid:nzgrid)); jacob = 0.0
       if (.not. allocated(djacdrho)) allocate (djacdrho(nalpha, -nzgrid:nzgrid)); djacdrho = 0.0
@@ -1400,7 +1396,6 @@ contains
       if (allocated(btor)) deallocate (btor)
       if (allocated(rmajor)) deallocate (rmajor)
       if (allocated(dbdzed)) deallocate (dbdzed)
-      if (allocated(d2bdzed)) deallocate (d2bdzed)
       if (allocated(jacob)) deallocate (jacob)
       if (allocated(djacdrho)) deallocate (djacdrho)
       if (allocated(gradpar)) deallocate (gradpar) 
