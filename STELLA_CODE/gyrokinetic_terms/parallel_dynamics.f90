@@ -26,7 +26,6 @@ contains
 
         if (debug) write (*, *) 'parallel_dynamics::init_parallel_dynamics::find_departure_points'
         call find_departure_points
-
     end subroutine init_parallel_dynamics
 
     subroutine allocate_arrays
@@ -60,8 +59,7 @@ contains
         
         use stella_time, only: code_dt
         use geometry, only: b_dot_grad_z, dbdzed
-  
-    
+
         implicit none
 
         integer :: ikymus, iky, imu
@@ -73,13 +71,11 @@ contains
         real, dimension(:), allocatable :: v_zed_from_izext, v_vpa_from_izext
         real :: max_dvzdzed, max_dvvdzed, sub_dt
         
-        
         ! v_zed = vpa * (b . grad z)
         ! v_vpa = - mu * (b . grad z) * dBdz
         ! To estimate the upper bound on time-step size, we need to calculate the maximum velocity gradients. Due to the form of
         ! these expressions, we only need to evaluate the gradients in z of the z dependent portion once before beginning the loops
         call find_max_dvdzed(max_dvzdzed, max_dvvdzed)
-
 
         ! the characteristic at a given (zext, vpa) value is determined by the particle's energy and mu
         ! energy = v^2 / vths^2 = energy(iv, imu, iz)
@@ -137,20 +133,13 @@ contains
                                 departure_point_outside_grid(ikx, iz, it, iv, ikymus))
                         end do
                     end do
-                    
+        
                     deallocate(iz_from_izext, ikx_from_izext, v_zed_from_izext, v_vpa_from_izext)
 
                 end do
             end do
-
-             
         end do
-
-
     end subroutine find_departure_points
-
-
-
 
 
         ! ##### Assisting subroutines #####!
@@ -170,7 +159,6 @@ contains
         real, intent(out) :: max_dvzdzed, max_dvvdzed
         real, dimension(-nzgrid:nzgrid) :: d_vz, d_vv
         integer :: ia = 1 ! No flux annulus
-
 
         call get_dzed(nzgrid, delzed, b_dot_grad_z(ia, :), d_vz)
         call get_dzed(nzgrid, delzed, b_dot_grad_z(ia, :) * dbdzed(ia, :), d_vv)
@@ -192,8 +180,6 @@ contains
         df(-nz + 1:nz - 1) = (f(-nz + 2:) - f(:nz - 2)) / (dz(:nz - 2) + dz(-nz + 1:nz - 1))
         df(-nz) = (f(-nz + 1) - f(nz - 1)) / (dz(-nz) + dz(nz - 1))
         df(nz) = df(-nz)
-   	
-
     end subroutine get_dzed
 
     subroutine find_tstep_count(mu, max_dvzdzed, max_dvvdzed, number_of_steps)
@@ -211,11 +197,8 @@ contains
         integer, intent(out) :: number_of_steps
         real :: max_dt
 
-
         max_dt = 0.1 / max(max_dvzdzed, abs(mu * max_dvvdzed)) 
-
         number_of_steps = ceiling(code_dt/max_dt)
-
     end subroutine find_tstep_count
 
     subroutine calculate_zed_vpa_departure_idx(no_of_steps, dt, nz_ext, initial_izext, initial_ivpa, &
@@ -245,7 +228,6 @@ contains
         d_izext = -dt/2.0/dz * v_zed_from_izext(initial_izext) * vpa(initial_ivpa) 
         d_ivpa = -dt/2.0/dvpa * v_vpa_from_izext(initial_izext) 
 
-        
         timeloop: do nt = 1, no_of_steps
             ! Iterate to solve implicit equation
             ! The final d_izext and d_ivpa is reused as an initial guess, for the next time step.
@@ -286,7 +268,6 @@ contains
         depart_ivpa = ivpa
 
         ! Now check if particle has departed the boundaries of vpa grid
-        ! FLAG: need to define departure iv in this case... only relevant for the maxwellian acceleration term
         if (ivpa > nvpa) then
             departure_outside_grid = .true. 
             ivpa = nvpa
@@ -458,7 +439,7 @@ contains
                             iz = iz_from_izext(izext)
                             ikx = ikx_from_izext(izext)
                             
-                            ! Technically this is operator split, so is there a way to alternate the order?
+                            ! Technically this is operator split, so maybe there is a way to alternate the order?
                             ! Or maybe we could argue that the acceleration does not change the electrostatic field (see comment above)
                             g_ext_2(izext, iv) = g_ext_2(izext, iv) - code_dt * spec(is)%zstm &
                             * maxwell_vpa(iv, is) * maxwell_mu(ia, iz, imu, is) *  b_dot_grad_z(ia, iz) &
@@ -488,8 +469,6 @@ contains
         if (allocated(departure_point_iv)) deallocate(departure_point_iv)
         if (allocated(departure_point_outside_grid)) deallocate(departure_point_outside_grid)
     end subroutine finish_parallel_dynamics
-
-
 
 
     ! ##### Interpolating utilities #####!
@@ -545,9 +524,5 @@ contains
         value = points(1) + (points(2)-points(1))*x
 
     end function linear_interpolate
-
-
-
-
 
 end module parallel_dynamics

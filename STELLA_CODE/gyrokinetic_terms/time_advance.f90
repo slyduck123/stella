@@ -80,7 +80,7 @@ contains
       if (debug) write (6, *) 'time_advance::init_time_advance::init_neoclassical_terms'
       call init_neoclassical_terms
 
-      !> FLAG: SHIFTED PARALLEL TERMS INIT DOWN TO AFTER CFL
+      !> FLAG(HX): SHIFTED PARALLEL TERMS INIT DOWN TO AFTER CFL
 
       !> allocate and calculate the factors multiplying dg/dx, dg/dy, dphi/dx and dphi/dy
       !> in the magnetic drift terms
@@ -102,7 +102,7 @@ contains
       if (debug) write (6, *) 'time_advance::init_time_advance::init_cfl'
       call init_cfl
 
-      !> FLAG: SHIFTED PARALLEL DYNAMICS INIT HERE BECAUSE PARALLEL_DYNAMICS NEEDS UPDATED CODE_DT
+      !> FLAG (HX): SHIFTED PARALLEL DYNAMICS INIT HERE BECAUSE PARALLEL_DYNAMICS NEEDS UPDATED CODE_DT
 
       if (split_parallel_dynamics) then
          !> calculate the term multiplying dg/dvpa in the mirror term
