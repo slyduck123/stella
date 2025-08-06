@@ -99,9 +99,6 @@ contains
             call find_tstep_count(mu(imu), max_dvzdzed, max_dvvdzed, ntime)
             sub_dt = code_dt/ntime
 
-            print *, "ntime is :" , ntime
-            !> FLAG: ok it seems like ntime is just 1 always, so code_dt is the bottleneck...
-
             do it = 1, ntubes
                 do ie = 1, neigen(iky)
                     ! nz_ext is the number of grid points in the extended zed domain
@@ -311,7 +308,7 @@ contains
         use species, only: spec
         use stella_time, only: code_dt
         use stella_layouts, only: vmu_lo, kymus_lo
-        use stella_layouts, only: iky_idx
+        use stella_layouts, only: iky_idx, imu_idx, is_idx
         use redistribute, only: scatter, gather
         use dist_redistribute, only: kymus2vmus
         use arrays_dist_fn, only: g_kymus
@@ -319,6 +316,7 @@ contains
         use extended_zgrid, only: map_to_extended_zgrid, map_from_extended_zgrid
         use extended_zgrid, only: map_to_iz_ikx_from_izext
         use fields, only: advance_fields
+        use geometry, only: b_dot_grad_z
         ! use array_fields, only: apar, bpar (this is throwing an error)
         ! call advance_fields(gnew, phi, apar, bpar, dist = 'g')
     
@@ -351,6 +349,9 @@ contains
         do ikymus = kymus_lo%llim_proc, kymus_lo%ulim_proc
             ! map to the extended zed domain to ease calculations
             iky = iky_idx(kymus_lo, ikymus)
+            imu = imu_idx(kymus_lo, ikymus)
+            is = is_idx(kymus_lo, ikymus)
+            
             do it = 1, ntubes
                 do ie = 1, neigen(iky)
                     ! nz_ext is the number of grid points in the extended zed domain
@@ -424,7 +425,7 @@ contains
                                     end do 
                                 end do
                             
-                                g_ext_2(izext, iv) = bicubic_spline(local4x4, point)
+                                g_ext_2(izext, iv) = bicubic_spline(local4x4, point) 
 
                             end if
                         end do
@@ -456,11 +457,13 @@ contains
                         do izext = 1, nz_ext
                             iz = iz_from_izext(izext)
                             ikx = ikx_from_izext(izext)
-                            !> FLAG: This is WRONG, but just wanted to compile this, so rounded izext and iv
-                            g_ext_2(izext, iv) = g_ext_2(izext, iv) + code_dt * spec(is)%zstm &
-                            * maxwell_vpa(iv, is) * maxwell_mu(ia, iz, imu, is) &
-                            * (- vpa_max + dvpa * (departure_point_iv(ikx, iz, it, iv, ikymus) - 1)) &
-                            * dphi_dz(int(departure_point_izext(ikx, iz, it, iv, ikymus)))
+                            
+                            ! Technically this is operator split, so is there a way to alternate the order?
+                            ! Or maybe we could argue that the acceleration does not change the electrostatic field (see comment above)
+                            g_ext_2(izext, iv) = g_ext_2(izext, iv) - code_dt * spec(is)%zstm &
+                            * maxwell_vpa(iv, is) * maxwell_mu(ia, iz, imu, is) *  b_dot_grad_z(ia, iz) &
+                            * vpa(iv) * dphi_dz(izext) 
+                            
                         end do
                     end do
                     do iv = 1, nvpa

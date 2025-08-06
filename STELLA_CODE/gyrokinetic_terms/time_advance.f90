@@ -79,22 +79,9 @@ contains
       !> only calculated/needed when simulating higher order terms in rhostar for intrinsic rotation
       if (debug) write (6, *) 'time_advance::init_time_advance::init_neoclassical_terms'
       call init_neoclassical_terms
-      if (split_parallel_dynamics) then
-         !> calculate the term multiplying dg/dvpa in the mirror term
-         !> and set up either the semi-Lagrange machinery or the tridiagonal matrix to be inverted
-         !> if solving implicitly
-         if (debug) write (6, *) 'time_advance::init_time_advance::init_mirror'
-         call init_mirror
-         !> calculate the term multiplying dg/dz in the parallel streaming term
-         !> and set up the tridiagonal matrix to be inverted if solving implicitly
-         if (debug) write (6, *) 'time_advance::init_time_advance::init_parstream'
-         call init_parallel_streaming
-      else
-         !> calculate the departure points in (z, vpa) needed for the semi-Lagrangian
-         !> evolution of both parallel streaming and mirror terms
-         if (debug) write (6, *) 'time_advance::init_time_advance::init_parallel_dynamics'
-         call init_parallel_dynamics
-      end if
+
+      !> FLAG: SHIFTED PARALLEL TERMS INIT DOWN TO AFTER CFL
+
       !> allocate and calculate the factors multiplying dg/dx, dg/dy, dphi/dx and dphi/dy
       !> in the magnetic drift terms
       if (debug) write (6, *) 'time_advance::init_time_advance::init_wdrift'
@@ -114,6 +101,25 @@ contains
       end if
       if (debug) write (6, *) 'time_advance::init_time_advance::init_cfl'
       call init_cfl
+
+      !> FLAG: SHIFTED PARALLEL DYNAMICS INIT HERE BECAUSE PARALLEL_DYNAMICS NEEDS UPDATED CODE_DT
+
+      if (split_parallel_dynamics) then
+         !> calculate the term multiplying dg/dvpa in the mirror term
+         !> and set up either the semi-Lagrange machinery or the tridiagonal matrix to be inverted
+         !> if solving implicitly
+         if (debug) write (6, *) 'time_advance::init_time_advance::init_mirror'
+         call init_mirror
+         !> calculate the term multiplying dg/dz in the parallel streaming term
+         !> and set up the tridiagonal matrix to be inverted if solving implicitly
+         if (debug) write (6, *) 'time_advance::init_time_advance::init_parstream'
+         call init_parallel_streaming
+      else
+         !> calculate the departure points in (z, vpa) needed for the semi-Lagrangian
+         !> evolution of both parallel streaming and mirror terms
+         if (debug) write (6, *) 'time_advance::init_time_advance::init_parallel_dynamics'
+         call init_parallel_dynamics
+      end if
 
       if (debug) write (6, *) 'time_advance::init_time_advance::init_source_timeaverage'
       call init_source_timeaverage
