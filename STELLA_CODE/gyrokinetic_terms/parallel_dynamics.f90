@@ -53,16 +53,16 @@ contains
         use zgrid, only: nzgrid, ntubes, delzed
         use vpamu_grids, only: nvpa, vpa, mu, nmu
         use stella_layouts, only: kymus_lo
-        use stella_layouts, only: imu_idx, iky_idx
+        use stella_layouts, only: imu_idx, iky_idx, is_idx
         use extended_zgrid, only: nsegments, nzed_segment, neigen
         use extended_zgrid, only: map_to_iz_ikx_from_izext
-        
+        use species, only: spec
         use stella_time, only: code_dt
         use geometry, only: b_dot_grad_z, dbdzed
 
         implicit none
 
-        integer :: ikymus, iky, imu
+        integer :: ikymus, iky, imu, is
         integer :: ikx, iz, it, iv
         integer :: izext, nz_ext, ie
         integer :: ia = 1  ! flux annulus is not supported
@@ -90,10 +90,13 @@ contains
             ! Retrieve indices for ky and mu
             imu = imu_idx(kymus_lo, ikymus)
             iky = iky_idx(kymus_lo, ikymus)
+            is = is_idx(kymus_lo, ikymus)
 
             ! Determine required sub time-step and step count
-            call find_tstep_count(mu(imu), max_dvzdzed, max_dvvdzed, ntime)
+            call find_tstep_count(mu(imu), is, max_dvzdzed, max_dvvdzed, ntime)
             sub_dt = code_dt/ntime
+
+            print *, ntime, sub_dt
 
             do it = 1, ntubes
                 do ie = 1, neigen(iky)
@@ -114,8 +117,8 @@ contains
                     ! Therefore, let's set up the 1D velocity arrays in the zext axis
                     do izext = 1, nz_ext
                         iz = iz_from_izext(izext)
-                        v_zed_from_izext(izext) = b_dot_grad_z(ia, iz) ! the factor of vpa will be added later !!!
-                        v_vpa_from_izext(izext) = -mu(imu) * b_dot_grad_z(ia, iz) * dbdzed(ia, iz)
+                        v_zed_from_izext(izext) = b_dot_grad_z(ia, iz) * spec(is)%stm ! the factor of vpa will be added later !!!
+                        v_vpa_from_izext(izext) = -mu(imu) * b_dot_grad_z(ia, iz) * dbdzed(ia, iz) * spec(is)%stm
                     end do
 
                     ! Now loop through all grid points (zext, vpa)
@@ -182,7 +185,7 @@ contains
         df(nz) = df(-nz)
     end subroutine get_dzed
 
-    subroutine find_tstep_count(mu, max_dvzdzed, max_dvvdzed, number_of_steps)
+    subroutine find_tstep_count(mu, is, max_dvzdzed, max_dvvdzed, number_of_steps)
         ! Here we calculate the number of sub time-steps needed to advance the parallel streaming
         ! Sub time-step is given by the bound dt <= c0/max(grad v), where c0 is an adjustable constant which dictates error 
         ! tolerance, here set to 0.2.
@@ -192,12 +195,14 @@ contains
         ! convergence (I think...)
 
         use stella_time, only: code_dt
+        use species, only: spec
 
         real, intent(in) :: mu, max_dvzdzed, max_dvvdzed
+        integer, intent(in) :: is
         integer, intent(out) :: number_of_steps
         real :: max_dt
 
-        max_dt = 0.1 / max(max_dvzdzed, abs(mu * max_dvvdzed)) 
+        max_dt = 0.1 / max(max_dvzdzed, abs(mu * max_dvvdzed)) /spec(is)%stm
         number_of_steps = ceiling(code_dt/max_dt)
     end subroutine find_tstep_count
 
