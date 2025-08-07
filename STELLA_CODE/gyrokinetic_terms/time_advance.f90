@@ -82,6 +82,18 @@ contains
 
       !> FLAG(HX): SHIFTED PARALLEL TERMS INIT DOWN TO AFTER CFL
 
+      if (split_parallel_dynamics) then
+         !> calculate the term multiplying dg/dvpa in the mirror term
+         !> and set up either the semi-Lagrange machinery or the tridiagonal matrix to be inverted
+         !> if solving implicitly
+         if (debug) write (6, *) 'time_advance::init_time_advance::init_mirror'
+         call init_mirror
+         !> calculate the term multiplying dg/dz in the parallel streaming term
+         !> and set up the tridiagonal matrix to be inverted if solving implicitly
+         if (debug) write (6, *) 'time_advance::init_time_advance::init_parstream'
+         call init_parallel_streaming
+      end if
+
       !> allocate and calculate the factors multiplying dg/dx, dg/dy, dphi/dx and dphi/dy
       !> in the magnetic drift terms
       if (debug) write (6, *) 'time_advance::init_time_advance::init_wdrift'
@@ -102,19 +114,8 @@ contains
       if (debug) write (6, *) 'time_advance::init_time_advance::init_cfl'
       call init_cfl
 
-      !> FLAG (HX): SHIFTED PARALLEL DYNAMICS INIT HERE BECAUSE PARALLEL_DYNAMICS NEEDS UPDATED CODE_DT
-
-      if (split_parallel_dynamics) then
-         !> calculate the term multiplying dg/dvpa in the mirror term
-         !> and set up either the semi-Lagrange machinery or the tridiagonal matrix to be inverted
-         !> if solving implicitly
-         if (debug) write (6, *) 'time_advance::init_time_advance::init_mirror'
-         call init_mirror
-         !> calculate the term multiplying dg/dz in the parallel streaming term
-         !> and set up the tridiagonal matrix to be inverted if solving implicitly
-         if (debug) write (6, *) 'time_advance::init_time_advance::init_parstream'
-         call init_parallel_streaming
-      else
+      ! HX: This is shifted here because final code_dt is needed for consistent evaluation of departure point
+      if (.not. split_parallel_dynamics) then
          !> calculate the departure points in (z, vpa) needed for the semi-Lagrangian
          !> evolution of both parallel streaming and mirror terms
          if (debug) write (6, *) 'time_advance::init_time_advance::init_parallel_dynamics'
@@ -597,7 +598,7 @@ contains
       use vpamu_grids, only: dvpa
       use grids_kxky, only: akx, aky, rho
       use parameters_kxky_grids, only: nx
-      use parameters_numerical, only: stream_implicit, mirror_implicit, drifts_implicit
+      use parameters_numerical, only: stream_implicit, mirror_implicit, drifts_implicit, split_parallel_dynamics
       use parallel_streaming, only: stream
       use parallel_streaming, only: stream_rad_var1, stream_rad_var2
       use mirror_terms, only: mirror
@@ -641,7 +642,7 @@ contains
          cfl_dt_linear = min(cfl_dt_linear, cfl_dt_shear)
       end if
 
-      if (.not. stream_implicit) then
+      if (.not. stream_implicit .and. split_parallel_dynamics) then
          ! NB: stream has code_dt built-in, which accounts for code_dt factor here
          cfl_dt_stream = abs(code_dt) * delzed(0) / max(maxval(abs(stream)), zero)
          cfl_dt_linear = min(cfl_dt_linear, cfl_dt_stream)
@@ -653,7 +654,7 @@ contains
       !    cfl_dt_linear = min(cfl_dt_linear, cfl_dt_stream)
       ! end if
 
-      if (.not. mirror_implicit) then
+      if (.not. mirror_implicit .and. split_parallel_dynamics) then
          ! NB: mirror has code_dt built-in, which accounts for code_dt factor here
          cfl_dt_mirror = abs(code_dt) * dvpa / max(maxval(abs(mirror)), zero)
          cfl_dt_linear = min(cfl_dt_linear, cfl_dt_mirror)
@@ -1197,7 +1198,7 @@ contains
       use parameters_kxky_grids, only: ikx_max, ny, naky_all
       use calculations_kxky, only: swap_kxky_back
       use grids_kxky, only: zonal_mode, akx
-      use parameters_numerical, only: stream_implicit, mirror_implicit, drifts_implicit
+      use parameters_numerical, only: stream_implicit, mirror_implicit, drifts_implicit, split_parallel_dynamics
       use dissipation, only: include_collisions, advance_collisions_explicit, collisions_implicit
       use sources, only: source_option_switch, source_option_krook
       use sources, only: add_krook_operator
@@ -1309,7 +1310,7 @@ contains
 !         write (*,*) 'post-parallel_flow_shear: ', test
          
          !> calculate and add mirror term to RHS of GK eqn
-         if (include_mirror .and. .not. mirror_implicit) then
+         if (include_mirror .and. .not. mirror_implicit .and. split_parallel_dynamics) then
             if (debug) write (*, *) 'time_advance::advance_stella::advance_explicit::solve_gke::advance_mirror_explicit'
             call advance_mirror_explicit(pdf, rhs)
          end if
@@ -1332,7 +1333,7 @@ contains
          if (include_collisions .and. .not. collisions_implicit) call advance_collisions_explicit(pdf, phi, bpar, rhs)
 
          !> calculate and add parallel streaming term to RHS of GK eqn
-         if (include_parallel_streaming .and. (.not. stream_implicit)) then
+         if (include_parallel_streaming .and. (.not. stream_implicit) .and. split_parallel_dynamics) then
             if (debug) write (*, *) 'time_advance::advance_stella::advance_explicit::solve_gke::advance_parallel_streaming_explicit'
             call advance_parallel_streaming_explicit(pdf, phi, bpar, rhs)
          end if

@@ -381,7 +381,7 @@ contains
             driftkinetic_implicit = .false.
          end if
          
-         if (mirror_implicit .or. stream_implicit .or. drifts_implicit) then
+         if (mirror_implicit .or. stream_implicit .or. drifts_implicit .or. .not. split_parallel_dynamics) then
             fully_explicit = .false.
          else
             fully_explicit = .true.

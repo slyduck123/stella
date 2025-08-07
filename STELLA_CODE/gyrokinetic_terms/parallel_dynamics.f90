@@ -15,7 +15,7 @@ module parallel_dynamics
 contains
     subroutine init_parallel_dynamics
         implicit none
-
+        
         ! allocate arrays needed during time advance
         if (debug) write (*, *) 'parallel_dynamics::init_parallel_dynamics::allocate_arrays'
         call allocate_arrays
@@ -312,20 +312,12 @@ contains
         complex, dimension (:, :, -nzgrid:, :), intent (inout) :: phi
 
         integer :: ikymus, iky, imu, is
-        integer :: ikx, iz, it, iv, ie
-        integer :: izext, nz_ext
+        integer :: ikx, it, ie, iv, nz_ext
         integer :: ulim   ! dummy variable
         integer :: ia = 1 ! does not support flux annulus
         integer, dimension (:), allocatable :: iz_from_izext, ikx_from_izext
         complex, dimension (:, :), allocatable :: g_ext_1, g_ext_2
         complex, dimension (:), allocatable :: phi_ext, dphi_dz
-
-        ! Used for interpolating g
-        real :: dep_izext, dep_iv
-        real, dimension(2) :: point
-        integer :: grid_v_start, grid_zext_start, l, m 
-        complex, dimension(4, 4) :: local4x4
-        
     
         ! the input pdf is in the vmu_lo; re-map to work in kymus_lo
         call scatter(kymus2vmus, pdf, g_kymus)
@@ -340,125 +332,44 @@ contains
             
             do it = 1, ntubes
                 do ie = 1, neigen(iky)
+                    ! Prepare extended zed domain
                     ! nz_ext is the number of grid points in the extended zed domain
                     nz_ext = nsegments(ie, iky) * nzed_segment + 1
-                    allocate (iz_from_izext(nz_ext))
-                    allocate (ikx_from_izext(nz_ext))
-                    ! g_ext_1 and g_ext_2 will contain slices of the pdf on the extended zed domain
-                    allocate (g_ext_1(nz_ext, nvpa)) 
-                    allocate (g_ext_2(nz_ext, nvpa))
-
+                    ! Allocate arrays for extended zed domain 
+                    allocate (iz_from_izext(nz_ext), ikx_from_izext(nz_ext))
+                    allocate (g_ext_1(nz_ext, nvpa), g_ext_2(nz_ext, nvpa))
+                    allocate (phi_ext(nz_ext), dphi_dz(nz_ext))
+                    
+                    ! Map g from (kx, z, tube) to the extended zed domain; NB: ulim is a dummy argument
                     do iv = 1, nvpa
-                        ! map from (kx, z, tube) to the extended zed domain; NB: ulim is a dummy argument
                         call map_to_extended_zgrid(it, ie, iky, g_kymus(:, :, :, iv, ikymus), g_ext_1(:, iv), ulim)
                     end do
-
+                    ! This is for mapping izext to iz and ikx
                     call map_to_iz_ikx_from_izext(iky, ie, iz_from_izext, ikx_from_izext)
-                    ! set the pdf(t+dt) at each (zext, vpa) grid point to be equal to
-                    ! the value of the pdf(t) at the (zext, vpa) that connects to it along the
-                    ! characteristic with constant particle kinetic energy
-                    ! NB: currently using a crude nearest-neighbour interpolation for departure point
-                    do iv = 1, nvpa
-                        do izext = 1, nz_ext
-                            iz = iz_from_izext(izext)
-                            ikx = ikx_from_izext(izext)
-
-                            if (departure_point_outside_grid(ikx, iz, it, iv, ikymus)) then
-                                g_ext_2(izext, iv) = 0.
-                            else
-                                ! Obtain interpolated values of g from g_ext_1 using departure izext and iv
-                                dep_izext = departure_point_izext(ikx, iz, it, iv, ikymus)
-                                dep_iv = departure_point_iv(ikx, iz, it, iv, ikymus)
-
-                                ! Handle edge cases: top, bottom, left, and right points (see below)
-
-                                ! Normal case:      Edge case:
-                                ! o o o o o o o o   o o 1 x x 1 o o o 
-                                ! o 1 1 1 1 o o o   o o 1 x x 1 o o o
-                                ! o 1 x x 1 o o o   o o 1 1 1 1 o o o  
-                                ! o 1 x x 1 o o o   o o 1 1 1 1 o o o 
-                                ! o 1 1 1 1 o o o   o o o o o o o o o
-                                ! o o o o o o o o   o o o o o o o o o 
-                                
-                                !> CHECK LOGIC AGAIN TO BE SURE !!
-
-                                if (int(dep_iv) == 1) then
-                                    grid_v_start = 1
-                                    point(2) = modulo(dep_iv, 1.0) - 1.0
-                                else if (int(dep_iv) == nvpa - 1) then
-                                    grid_v_start = nvpa - 3
-                                    point(2) = modulo(dep_iv, 1.0) + 1.0
-                                else
-                                    grid_v_start = int(dep_iv) - 1
-                                    point(2) = modulo(dep_iv, 1.0)
-                                end if
-
-                                if (int(dep_izext) == 1) then
-                                    grid_zext_start = 1
-                                    point(1) = modulo(dep_izext, 1.0) - 1.0
-                                else if (int(dep_izext) == nz_ext - 1) then
-                                    grid_zext_start = nz_ext - 3
-                                    point(1) = modulo(dep_izext, 1.0) + 1.0
-                                else
-                                    grid_zext_start = int(dep_izext) - 1
-                                    point(1) = modulo(dep_izext, 1.0)
-                                end if
-                                
-                                ! Construct grid array for interpolation
-                                do m = 1, 4
-                                    do l = 1, 4
-                                        local4x4(l,m) = g_ext_1(grid_zext_start + l - 1, grid_v_start + m - 1)
-                                    end do 
-                                end do
-                            
-                                g_ext_2(izext, iv) = bicubic_spline(local4x4, point) 
-
-                            end if
-                        end do
-                    end do
-                    
-                    ! (Can I assume electrostatic field?) If so, the acceleration due to background Maxwellian population does not
-                    ! change the population density of species at each spatial location. Therefore, any changes to phi is entirely
-                    ! due to advection which we have already calculated previously. Therefore, use the midpoint to advance g due to    
-                    ! this acceleration term? (i.e. we can compute dphi/dz in both the previous time-step as well as the current time-step)
-                    ! Technically, we can even split this calculation into sub-timesteps
-                    ! (i.e. advect -> dphi/dt -> advect -> dphi/dt -> etc. or maybe swap orders if that's more accurate), but 
-                    ! this might defeat the whole purpose of using semi-lagrange (although there's still more freedom to choose larger substeps)
-                    
-                    ! call advance_fields(gnew, phi, apar, bpar, dist = 'g')
-                    
-                    ! phi_ext will contain a slice of the electrostatic potential on the extended zed domain
-                    allocate (phi_ext(nz_ext))
-                    ! dphi_dz will contain a slice of dphi/dz on the extended zed domain
-                    allocate (dphi_dz(nz_ext))
-                    ! map from (kx, z, tube) to the extended zed domain; NB: ulim is a dummy argument
+                    ! Map phi from (kx, z, tube) to the extended zed domain; NB: ulim is a dummy argument
                     call map_to_extended_zgrid(it, ie, iky, phi(iky, :, :, :), phi_ext, ulim)
                     ! compute dphi/dz using centered differences, with zero BCs
                     call second_order_centered(1, phi_ext, delzed(0), dphi_dz)
-                    ! calculate the change in g over time dt due to the parallel acceleration of
-                    ! particles in the background Maxwellian population (by the parallel electric field);
-                    ! for now, use the parallel electric field at the departure point to obtain
-                    ! the acceleration
+
+                    ! #### ADVANCE TERMS #####
+                    !g_ext_2 = g_ext_1
+                    !call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 0.5)
+                    !g_ext_1 = g_ext_2
+                    !call advance_advection(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_1, g_ext_2)
+                    !call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 0.5)
+                    call advance_advection(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_1, g_ext_2)
+                    call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 1.0)
+
+                    
+                    ! Map back updated g to kymus layout
                     do iv = 1, nvpa
-                        do izext = 1, nz_ext
-                            iz = iz_from_izext(izext)
-                            ikx = ikx_from_izext(izext)
-                            
-                            ! Technically this is operator split, so maybe there is a way to alternate the order?
-                            ! Or maybe we could argue that the acceleration does not change the electrostatic field (see comment above)
-                            g_ext_2(izext, iv) = g_ext_2(izext, iv) - code_dt * spec(is)%zstm &
-                            * maxwell_vpa(iv, is) * maxwell_mu(ia, iz, imu, is) *  b_dot_grad_z(ia, iz) &
-                            * vpa(iv) * dphi_dz(izext) 
-                            
-                        end do
-                    end do
-                    do iv = 1, nvpa
-                        ! map from the extended zed domain to (kx, z, tube); NB: ulim is a dummy argument
                         call map_from_extended_zgrid(it, ie, iky, g_ext_2(:, iv), g_kymus(:, :, :, iv, ikymus))
                     end do
-                    ! deallocate g_ext so that it can be re-allocated with different size
+
+                    ! Deallocate arrays so it can be reallocated with different size
                     deallocate (g_ext_1, g_ext_2, phi_ext, dphi_dz)
                     deallocate (iz_from_izext, ikx_from_izext)
+
                 end do
             end do
         end do
@@ -468,6 +379,137 @@ contains
 
     end subroutine advance_parallel_dynamics
 
+    
+    subroutine advance_advection(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_1, g_ext_2)
+        ! set the pdf(t+dt) at each (zext, vpa) grid point to be equal to
+        ! the value of the pdf(t) at the (zext, vpa) that connects to it along the
+        ! characteristic with constant particle kinetic energy
+        ! NB: currently using a crude nearest-neighbour interpolation for departure point
+        use vpamu_grids, only: nvpa
+        integer, intent(in) :: it, ikymus, iky, imu, is, nz_ext
+        integer, dimension(:), intent(in) :: iz_from_izext, ikx_from_izext
+        complex, dimension(:, :), intent(in) :: g_ext_1
+        complex, dimension(:, :), intent(inout) :: g_ext_2
+
+        ! Used for interpolating g
+        real :: dep_izext, dep_iv
+        real, dimension(2) :: point
+        integer :: iv, izext, ikx, iz, grid_v_start, grid_zext_start, l, m 
+        complex, dimension(4, 4) :: local4x4
+
+
+        do iv = 1, nvpa
+            do izext = 1, nz_ext
+                iz = iz_from_izext(izext)
+                ikx = ikx_from_izext(izext)
+
+                if (departure_point_outside_grid(ikx, iz, it, iv, ikymus)) then
+                    g_ext_2(izext, iv) = 0.
+                else
+                    ! Obtain interpolated values of g from g_ext_1 using departure izext and iv
+                    dep_izext = departure_point_izext(ikx, iz, it, iv, ikymus)
+                    dep_iv = departure_point_iv(ikx, iz, it, iv, ikymus)
+
+                    ! Handle edge cases: top, bottom, left, and right points (see below)
+
+                    ! Normal case:      Edge case:
+                    ! o o o o o o o o   o o 1 x x 1 o o o 
+                    ! o 1 1 1 1 o o o   o o 1 x x 1 o o o
+                    ! o 1 x x 1 o o o   o o 1 1 1 1 o o o  
+                    ! o 1 x x 1 o o o   o o 1 1 1 1 o o o 
+                    ! o 1 1 1 1 o o o   o o o o o o o o o
+                    ! o o o o o o o o   o o o o o o o o o 
+                    
+                    !> CHECK LOGIC AGAIN TO BE SURE !!
+
+                    if (int(dep_iv) == 1) then
+                        grid_v_start = 1
+                        point(2) = modulo(dep_iv, 1.0) - 1.0
+                    else if (int(dep_iv) == nvpa - 1) then
+                        grid_v_start = nvpa - 3
+                        point(2) = modulo(dep_iv, 1.0) + 1.0
+                    else
+                        grid_v_start = int(dep_iv) - 1
+                        point(2) = modulo(dep_iv, 1.0)
+                    end if
+
+                    if (int(dep_izext) == 1) then
+                        grid_zext_start = 1
+                        point(1) = modulo(dep_izext, 1.0) - 1.0
+                    else if (int(dep_izext) == nz_ext - 1) then
+                        grid_zext_start = nz_ext - 3
+                        point(1) = modulo(dep_izext, 1.0) + 1.0
+                    else
+                        grid_zext_start = int(dep_izext) - 1
+                        point(1) = modulo(dep_izext, 1.0)
+                    end if
+                    
+                    ! Construct grid array for interpolation
+                    do m = 1, 4
+                        do l = 1, 4
+                            local4x4(l,m) = g_ext_1(grid_zext_start + l - 1, grid_v_start + m - 1)
+                        end do 
+                    end do
+                
+                    g_ext_2(izext, iv) = bicubic_spline(local4x4, point) 
+
+                end if
+            end do
+        end do
+
+    end subroutine advance_advection
+
+    subroutine advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, frac)
+        use vpamu_grids, only: nvpa, vpa_max, vpa, dvpa, maxwell_vpa, maxwell_mu
+        use stella_time, only: code_dt
+        use species, only: spec
+        use geometry, only: b_dot_grad_z
+        ! calculate the change in g over time dt due to the parallel acceleration of
+        ! particles in the background Maxwellian population (by the parallel electric field);
+        ! for now, use the parallel electric field at the departure point to obtain
+        ! the acceleration
+
+        ! call advance_fields(gnew, phi, apar, bpar, dist = 'g')
+
+        integer, intent(in) :: it, ikymus, iky, imu, is, nz_ext
+        integer, dimension(:), intent(in) :: iz_from_izext, ikx_from_izext
+        real, intent(in) :: frac ! fraction of time-step to take
+
+        complex, dimension(:, :), intent(inout) :: g_ext_2
+        complex, dimension(:), intent(in) :: dphi_dz
+
+        integer :: iv, izext, iz, ikx, iv_dep, iz_dep, izext_dep
+        integer :: ia = 1 ! Flux annulus not supported
+
+        complex :: now, past
+
+        do iv = 1, nvpa
+            do izext = 1, nz_ext
+                iz = iz_from_izext(izext)
+                ikx = ikx_from_izext(izext)
+
+                izext_dep = int(departure_point_izext(ikx, iz, it, iv, ikymus))
+                iv_dep = int(departure_point_iv(ikx, iz, it, iv, ikymus))
+                iz_dep = iz_from_izext(izext_dep)
+                
+                now = maxwell_vpa(iv, is) * maxwell_mu(ia, iz, imu, is) *  b_dot_grad_z(ia, iz) * vpa(iv) * dphi_dz(izext)
+                past = maxwell_vpa(iv_dep, is) * maxwell_mu(ia, iz_dep, imu, is) *  b_dot_grad_z(ia, iz_dep) * vpa(iv_dep) * dphi_dz(izext_dep)
+
+                g_ext_2(izext, iv) = g_ext_2(izext, iv) - code_dt * frac * spec(is)%zstm &
+                * 0.5 * (now + past)
+
+
+                !* 0.25 * (vpa(iv) + (- vpa_max + dvpa * (departure_point_iv(ikx, iz, it, iv, ikymus) - 1))) &
+                !*(dphi_dz(izext) + complex_linear_interpolate([dphi_dz(), &
+                !                            dphi_dz(int(departure_point_izext(ikx, iz, it, iv, ikymus)) + 1)], &
+                 !                           modulo(departure_point_izext(ikx, iz, it, iv, ikymus), 1.0)) )   
+
+
+
+            end do
+        end do
+    end subroutine advance_acceleration
+    
     subroutine finish_parallel_dynamics
         implicit none
         if (allocated(departure_point_izext)) deallocate(departure_point_izext)
@@ -529,5 +571,17 @@ contains
         value = points(1) + (points(2)-points(1))*x
 
     end function linear_interpolate
+
+    function complex_linear_interpolate(points, x) result(value)
+        implicit none
+        complex, intent(in), dimension(2) :: points
+        real, intent(in) :: x
+
+        complex :: value
+
+        value = points(1) + (points(2)-points(1))*x
+
+    end function complex_linear_interpolate
+    
 
 end module parallel_dynamics
