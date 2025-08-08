@@ -202,7 +202,7 @@ contains
         integer, intent(out) :: number_of_steps
         real :: max_dt
 
-        max_dt = 0.1 / max(max_dvzdzed, abs(mu * max_dvvdzed)) /spec(is)%stm
+        max_dt = 0.05 / max(max_dvzdzed, abs(mu * max_dvvdzed)) /spec(is)%stm
         number_of_steps = ceiling(code_dt/max_dt)
     end subroutine find_tstep_count
 
@@ -352,13 +352,13 @@ contains
                     call second_order_centered(1, phi_ext, delzed(0), dphi_dz)
 
                     ! #### ADVANCE TERMS #####
-                    !g_ext_2 = g_ext_1
-                    !call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 0.5)
-                    !g_ext_1 = g_ext_2
-                    !call advance_advection(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_1, g_ext_2)
-                    !call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 0.5)
+                    g_ext_2 = g_ext_1
+                    call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 0.5)
+                    g_ext_1 = g_ext_2
                     call advance_advection(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_1, g_ext_2)
-                    call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 1.0)
+                    call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 0.5)
+                    !call advance_advection(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_1, g_ext_2)
+                    !call advance_acceleration(it, ikymus, iky, imu, is, nz_ext, iz_from_izext, ikx_from_izext, g_ext_2, dphi_dz, 1.0)
 
                     
                     ! Map back updated g to kymus layout
@@ -493,10 +493,10 @@ contains
                 iz_dep = iz_from_izext(izext_dep)
                 
                 now = maxwell_vpa(iv, is) * maxwell_mu(ia, iz, imu, is) *  b_dot_grad_z(ia, iz) * vpa(iv) * dphi_dz(izext)
-                past = maxwell_vpa(iv_dep, is) * maxwell_mu(ia, iz_dep, imu, is) *  b_dot_grad_z(ia, iz_dep) * vpa(iv_dep) * dphi_dz(izext_dep)
+                ! past = maxwell_vpa(iv_dep, is) * maxwell_mu(ia, iz_dep, imu, is) *  b_dot_grad_z(ia, iz_dep) * vpa(iv_dep) * dphi_dz(izext_dep)
 
                 g_ext_2(izext, iv) = g_ext_2(izext, iv) - code_dt * frac * spec(is)%zstm &
-                * 0.5 * (now + past)
+                * now
 
 
                 !* 0.25 * (vpa(iv) + (- vpa_max + dvpa * (departure_point_iv(ikx, iz, it, iv, ikymus) - 1))) &
