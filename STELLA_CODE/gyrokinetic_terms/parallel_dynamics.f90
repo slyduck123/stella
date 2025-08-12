@@ -202,7 +202,7 @@ contains
         integer, intent(out) :: number_of_steps
         real :: max_dt
 
-        max_dt = 0.05 / max(max_dvzdzed, abs(mu * max_dvvdzed)) /spec(is)%stm
+        max_dt = 0.1 / max(max_dvzdzed, abs(mu * max_dvvdzed)) /spec(is)%stm
         number_of_steps = ceiling(code_dt/max_dt)
     end subroutine find_tstep_count
 
@@ -272,14 +272,18 @@ contains
         depart_izext = izext
         depart_ivpa = ivpa
 
-        ! Now check if particle has departed the boundaries of vpa grid
+        ! Now check if particle has departed the boundaries of grid one last time
         if (ivpa > nvpa) then
             departure_outside_grid = .true. 
             ivpa = nvpa
-        else if (ivpa < 1.0) then
+        else if (ivpa < 1.0) then`
             departure_outside_grid = .true. 
             ivpa = 1.0
         end if
+
+        if (izext > nz_ext .or. izext < 1.0) then
+            departure_outside_grid = .true. 
+        end if 
 
     end subroutine calculate_zed_vpa_departure_idx
 
@@ -533,29 +537,30 @@ contains
         
         complex, intent(in), dimension(4, 4) :: grid_points
         real, intent(in), dimension(2) :: point
-        real, dimension(4,4) :: m
+        real, dimension(4,4) :: m, temp_matrix
+        real, dimension(4) :: x_vec, y_vec
         real :: real_value, imag_value
         complex :: value
-        integer :: i, j, k, l
-
-        real_value = 0.0
-        imag_value = 0.0
+        integer :: i
 
         m = reshape([0.0, -1.0/3.0,  1.0/2.0,  -1.0/6.0, &
                      1.0, -1.0/2.0,   -1.0,     1.0/2.0, &
                      0.0,   1.0,     1.0/2.0,  -1.0/2.0, &
                      0.0, -1.0/6.0,    0.0,     1.0/6.0  ], [4,4])
+        
 
         do i = 1, 4
-            do j = 1, 4
-                do k = 1, 4
-                    do l = 1, 4
-                        real_value = real_value + point(2)**(i-1) * m(i, j) * point(1)**(l-1) * m(l, k) * real(grid_points(k, j))
-                        imag_value = imag_value + point(2)**(i-1) * m(i, j) * point(1)**(l-1) * m(l, k) * aimag(grid_points(k, j))
-                    end do
-                end do
-            end do
+            x_vec(i) = point(1)**(i-1)
+            y_vec(i) = point(2)**(i-1)
         end do
+
+        temp_matrix = matmul(real(grid_points), transpose(m))
+        temp_matrix = matmul(m, temp_matrix)
+        real_value = dot_product(matmul(temp_matrix, y_vec), x_vec)
+
+        temp_matrix = matmul(aimag(grid_points), transpose(m))
+        temp_matrix = matmul(m, temp_matrix)
+        imag_value = dot_product(matmul(temp_matrix, y_vec), x_vec)
 
         value = cmplx(real_value, imag_value)
     
